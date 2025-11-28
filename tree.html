@@ -2,118 +2,121 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Folder Tree Viewer</title>
+<title>Advanced Folder Tree Viewer</title>
 <style>
     body {
         font-family: Menlo, Consolas, monospace;
         background: #f4f4f4;
         padding: 20px;
     }
-    #tree ul {
+    ul {
         list-style-type: none;
         padding-left: 20px;
     }
+    li {
+        line-height: 22px;
+        cursor: pointer;
+    }
     .folder::before { content: "📁 "; }
     .file::before   { content: "📄 "; }
-    li { cursor: pointer; line-height: 22px; }
 
-    #picker {
+    #chooseBtn {
         padding: 15px 20px;
         background: #ddd;
         border-radius: 8px;
+        cursor: pointer;
         display: inline-block;
-        cursor: pointer;
-        margin-right: 20px;
     }
 
-    #buttons {
-        margin-top: 10px;
-        margin-bottom: 20px;
-    }
-
-    .action-btn {
-        padding: 8px 14px;
-        border-radius: 6px;
-        border: none;
-        background: #bbb;
-        cursor: pointer;
-        margin-right: 8px;
-    }
-    .action-btn:hover {
-        background: #aaa;
+    .hidden {
+        display: none;
     }
 </style>
 </head>
 
 <body>
 
-<h2>📁 Folder Tree Viewer</h2>
+<h2>📁 Folder Tree Viewer (File System Access API)</h2>
 
-<label id="picker">
-    👉 点击选择文件夹
-    <input id="dirPicker" type="file" webkitdirectory multiple style="display:none">
-</label>
+<div id="chooseBtn">👉 点击选择文件夹</div>
 
-<div id="buttons" style="display:none;">
-    <button id="showFolders" class="action-btn">只显示文件夹</button>
-    <button id="showAll" class="action-btn">显示全部</button>
+<div style="margin-top: 20px;">
+    <button id="onlyFoldersBtn">只显示文件夹</button>
+    <button id="showAllBtn">显示全部</button>
 </div>
 
 <div id="tree"></div>
 
 <script>
-let FULL_TREE = null;  // 完整的树结构（文件 + 文件夹）
+let FULL_TREE = null;
 
-document.getElementById("dirPicker").addEventListener("change", function(e) {
-    const files = e.target.files;
-    FULL_TREE = buildTree(files); // 保存完整树
-    renderTree(FULL_TREE, false);  // 默认显示全部
+// ----------------------------
+// 选择文件夹
+// ----------------------------
+document.getElementById("chooseBtn").onclick = async () => {
+    try {
+        const dirHandle = await window.showDirectoryPicker();
+        FULL_TREE = await readDirectory(dirHandle);
+        renderTree(FULL_TREE, false); // 默认显示所有内容
+    } catch (err) {
+        alert("选择文件夹失败或取消授权");
+    }
+};
 
-    document.getElementById("buttons").style.display = "block";
-});
 
-// -------------------------
-// 构建树（从文件路径解析）
-// -------------------------
-function buildTree(files) {
-    const root = {};
+// ----------------------------
+// 递归读取目录（最强方案）
+// ----------------------------
+async function readDirectory(dirHandle) {
+    const node = {
+        name: dirHandle.name,
+        children: [],
+        isFile: false
+    };
 
-    for (let file of files) {
-        const parts = file.webkitRelativePath.split("/");
-        let node = root;
-
-        for (let i = 0; i < parts.length; i++) {
-            const part = parts[i];
-            if (!node[part]) node[part] = {};
-            node = node[part];
+    for await (const entry of dirHandle.values()) {
+        if (entry.kind === "directory") {
+            node.children.push(await readDirectory(entry));
+        } else {
+            node.children.push({
+                name: entry.name,
+                isFile: true,
+                children: []
+            });
         }
     }
-    return root;
+
+    // 排序：文件夹在前
+    node.children.sort((a, b) => {
+        if (a.isFile === b.isFile) return a.name.localeCompare(b.name);
+        return a.isFile ? 1 : -1;
+    });
+
+    return node;
 }
 
-// -------------------------
-// 渲染树（支持过滤）
-// -------------------------
-function renderTree(treeRoot, foldersOnly) {
+
+// ----------------------------
+// 渲染目录树
+// ----------------------------
+function renderTree(root, foldersOnly) {
     const container = document.getElementById("tree");
     container.innerHTML = "";
 
     function buildList(node) {
         const ul = document.createElement("ul");
 
-        for (let name in node) {
-            const children = node[name];
-            const isLeaf = Object.keys(children).length === 0;
-
-            if (foldersOnly && isLeaf) continue; // 过滤掉文件
+        for (const child of node.children) {
+            if (foldersOnly && child.isFile) continue;
 
             const li = document.createElement("li");
-            li.textContent = name;
-            li.className = isLeaf ? "file" : "folder";
+            li.textContent = child.name;
+            li.className = child.isFile ? "file" : "folder";
 
-            const childUl = buildList(children);
+            const childUl = buildList(child);
+            li.appendChild(childUl);
 
-            if (!isLeaf) {
+            if (!child.isFile) {
                 li.onclick = function(e) {
                     e.stopPropagation();
                     childUl.style.display =
@@ -121,28 +124,30 @@ function renderTree(treeRoot, foldersOnly) {
                 };
             }
 
-            li.appendChild(childUl);
             ul.appendChild(li);
         }
+
         return ul;
     }
 
-    container.appendChild(buildList(treeRoot));
+    container.appendChild(buildList(root));
 }
 
-// -------------------------
-// 按钮功能：只显示文件夹
-// -------------------------
-document.getElementById("showFolders").onclick = function() {
+
+// ----------------------------
+// 按钮：只显示文件夹
+// ----------------------------
+document.getElementById("onlyFoldersBtn").onclick = () => {
     if (FULL_TREE) renderTree(FULL_TREE, true);
 };
 
-// -------------------------
-// 按钮功能：显示全部
-// -------------------------
-document.getElementById("showAll").onclick = function() {
+// ----------------------------
+// 按钮：显示全部
+// ----------------------------
+document.getElementById("showAllBtn").onclick = () => {
     if (FULL_TREE) renderTree(FULL_TREE, false);
 };
+
 </script>
 
 </body>

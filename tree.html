@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Folder Tree Viewer</title>
+<style>
+    body {
+        font-family: Menlo, Consolas, monospace;
+        background: #f4f4f4;
+        padding: 20px;
+    }
+    #tree ul {
+        list-style-type: none;
+        padding-left: 20px;
+    }
+    .folder::before { content: "📁 "; }
+    .file::before   { content: "📄 "; }
+    li { cursor: pointer; line-height: 22px; }
+
+    #picker {
+        padding: 15px 20px;
+        background: #ddd;
+        border-radius: 8px;
+        display: inline-block;
+        cursor: pointer;
+        margin-right: 20px;
+    }
+
+    #buttons {
+        margin-top: 10px;
+        margin-bottom: 20px;
+    }
+
+    .action-btn {
+        padding: 8px 14px;
+        border-radius: 6px;
+        border: none;
+        background: #bbb;
+        cursor: pointer;
+        margin-right: 8px;
+    }
+    .action-btn:hover {
+        background: #aaa;
+    }
+</style>
+</head>
+
+<body>
+
+<h2>📁 Folder Tree Viewer</h2>
+
+<label id="picker">
+    👉 点击选择文件夹
+    <input id="dirPicker" type="file" webkitdirectory multiple style="display:none">
+</label>
+
+<div id="buttons" style="display:none;">
+    <button id="showFolders" class="action-btn">只显示文件夹</button>
+    <button id="showAll" class="action-btn">显示全部</button>
+</div>
+
+<div id="tree"></div>
+
+<script>
+let FULL_TREE = null;  // 完整的树结构（文件 + 文件夹）
+
+document.getElementById("dirPicker").addEventListener("change", function(e) {
+    const files = e.target.files;
+    FULL_TREE = buildTree(files); // 保存完整树
+    renderTree(FULL_TREE, false);  // 默认显示全部
+
+    document.getElementById("buttons").style.display = "block";
+});
+
+// -------------------------
+// 构建树（从文件路径解析）
+// -------------------------
+function buildTree(files) {
+    const root = {};
+
+    for (let file of files) {
+        const parts = file.webkitRelativePath.split("/");
+        let node = root;
+
+        for (let i = 0; i < parts.length; i++) {
+            const part = parts[i];
+            if (!node[part]) node[part] = {};
+            node = node[part];
+        }
+    }
+    return root;
+}
+
+// -------------------------
+// 渲染树（支持过滤）
+// -------------------------
+function renderTree(treeRoot, foldersOnly) {
+    const container = document.getElementById("tree");
+    container.innerHTML = "";
+
+    function buildList(node) {
+        const ul = document.createElement("ul");
+
+        for (let name in node) {
+            const children = node[name];
+            const isLeaf = Object.keys(children).length === 0;
+
+            if (foldersOnly && isLeaf) continue; // 过滤掉文件
+
+            const li = document.createElement("li");
+            li.textContent = name;
+            li.className = isLeaf ? "file" : "folder";
+
+            const childUl = buildList(children);
+
+            if (!isLeaf) {
+                li.onclick = function(e) {
+                    e.stopPropagation();
+                    childUl.style.display =
+                        childUl.style.display === "none" ? "block" : "none";
+                };
+            }
+
+            li.appendChild(childUl);
+            ul.appendChild(li);
+        }
+        return ul;
+    }
+
+    container.appendChild(buildList(treeRoot));
+}
+
+// -------------------------
+// 按钮功能：只显示文件夹
+// -------------------------
+document.getElementById("showFolders").onclick = function() {
+    if (FULL_TREE) renderTree(FULL_TREE, true);
+};
+
+// -------------------------
+// 按钮功能：显示全部
+// -------------------------
+document.getElementById("showAll").onclick = function() {
+    if (FULL_TREE) renderTree(FULL_TREE, false);
+};
+</script>
+
+</body>
+</html>
